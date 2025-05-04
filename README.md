@@ -1,51 +1,96 @@
-# CLIP Video Embeddings Generator
+# ReelsRS - Video Recommendation System
 
-This project generates CLIP embeddings for both video frames and captions. It uses OpenAI's CLIP model to create visual and textual embeddings that can be used for various applications like similarity search, recommendation systems, etc.
+This project uses CLIP (Contrastive Language-Image Pre-training) to generate embeddings for videos and their associated text descriptions, enabling content-based recommendations and similarity searches for short video clips.
 
 ## Features
 
-- Extract frames from video files
+### Video Processing and Embedding Generation
+- Extract frames from video files with customizable frame count and interval
 - Generate CLIP embeddings for video frames
-- Process video captions and generate text embeddings
-- Save embeddings for future use
+- Process video captions/descriptions and generate text embeddings
+- Aggregation of frame embeddings with different strategies (mean, max)
+- Support for multiple video categories
+- GPU acceleration with CUDA and MPS support
 
-## Setup and Usage
+### Similarity Search
+- Find similar videos based on both visual and textual content
+- Customizable weighting between visual and textual similarity
+- Support for cross-category recommendations
+- Ranking of most similar content
+
+### Embedding Visualization
+- 2D and 3D visualization of embeddings using t-SNE or PCA
+- Visualization of different embedding types (frame, aggregated, text)
+- Color-coded visualization by video category
+- Support for interactive exploration of the embedding space
+
+### API Server
+- FastAPI-based RESTful API for video recommendations
+- CORS support for cross-origin requests
+
+## Setup and Installation
 
 ### Requirements
 
-The script will automatically install all required dependencies:
-- PyTorch
-- OpenCV
-- PIL
-- CLIP
-- Other dependencies
-
-### Usage
-
-Simply run the Python script:
+Install all required dependencies:
 
 ```bash
-python clip_video_embeddings.py
+pip install -r requirements.txt
+```
+
+## Usage
+
+### Generate Embeddings
+
+```bash
+python clip_video_embeddings.py --data_folder Data --num_frames 10 --frame_interval 3
 ```
 
 The script will:
-1. Extract frames from video1.mp4 in the Data folder
-2. Read the caption from video1.txt
-3. Generate CLIP embeddings for both frames and caption
-4. Save embeddings to the "embeddings" folder
+1. Find all videos in the specified data folder (organized by category)
+2. Extract frames from each video
+3. Generate CLIP embeddings for frames and associated text descriptions
+4. Save embeddings to the "embeddings" folder organized by category
 
-## Output
+### Find Similar Videos
 
-The script will create:
-- `frame_embeddings_{timestamp}.npy`: NumPy array of frame embeddings
-- `caption_embeddings_{timestamp}.npy`: NumPy array of caption embeddings
+```bash
+python find_similar_videos.py Data/Category/video.mp4 --k 5 --video-weight 0.7 --text-weight 0.3
+```
 
-These embeddings can be used for similarity search, content recommendation, and other applications.
+This command will:
+1. Load embeddings for the specified video
+2. Find the top 5 most similar videos across all categories
+3. Display results with similarity scores
+
+### Visualize Embeddings
+
+```bash
+python visualize_embeddings.py --embedding-type aggregated --dimensions 2 --method tsne
+```
+
+This will:
+1. Load embeddings of the specified type (frame, aggregated, or text)
+2. Reduce dimensions using t-SNE or PCA
+3. Create a visualization with videos color-coded by category
+
+### Start the API Server
+
+```bash
+python app.py
+```
+
+The FastAPI server will start, allowing access to the recommendation system via HTTP requests.
+
+## API Endpoints
+
+- `GET /` - Root endpoint (welcome message)
+- Additional endpoints for recommendation functionality can be added as needed
 
 ## Customization
 
-You can modify the script to:
-- Process different videos
-- Change the number of frames extracted
-- Use different CLIP model variants
-- Customize embedding output format 
+You can modify the scripts to:
+- Process different video formats
+- Change the embedding models or parameters
+- Customize similarity metrics
+- Adjust visualization settings 

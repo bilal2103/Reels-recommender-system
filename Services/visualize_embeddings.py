@@ -9,12 +9,6 @@ import matplotlib.colors as mcolors
 import argparse
 
 def load_embeddings_from_categories(embeddings_dir="embeddings", embedding_type="frame"):
-    """Load embeddings from category subfolders
-    
-    Args:
-        embeddings_dir: Base directory for embeddings
-        embedding_type: Type of embeddings to load ("frame", "aggregated", or "text")
-    """
     # Identify all category folders
     category_dirs = [d for d in glob.glob(os.path.join(embeddings_dir, "*")) if os.path.isdir(d)]
     
@@ -244,65 +238,6 @@ def visualize_3d(reduced_embeddings, labels, categories=None, title="CLIP Embedd
     
     return fig
 
-def analyze_distances(embeddings, labels, categories=None):
-    """Analyze distances between embeddings"""
-    # Calculate pairwise distances
-    from sklearn.metrics.pairwise import cosine_distances, euclidean_distances
-    
-    cosine_dists = cosine_distances(embeddings)
-    euclidean_dists = euclidean_distances(embeddings)
-    
-    print("\nDistance Analysis:")
-    
-    # Get unique video names
-    unique_videos = list(set(labels))
-    
-    # For each video, find the closest and furthest embeddings
-    for i, video in enumerate(unique_videos):
-        # Get indices for this video
-        video_indices = [idx for idx, v in enumerate(labels) if v == video]
-        
-        # Include category in the printout if available
-        video_label = video
-        if categories:
-            category = categories[video_indices[0]]
-            video_label = f"{category}: {video}"
-        
-        if len(video_indices) > 1:
-            # Find closest embeddings within this video
-            within_dists = cosine_dists[np.ix_(video_indices, video_indices)]
-            np.fill_diagonal(within_dists, np.inf)  # Exclude self-comparison
-            
-            closest_pair = np.unravel_index(np.argmin(within_dists), within_dists.shape)
-            closest_idx1, closest_idx2 = video_indices[closest_pair[0]], video_indices[closest_pair[1]]
-            closest_dist = within_dists[closest_pair]
-            
-            print(f"\n{video_label}:")
-            print(f"  - Closest embeddings: {closest_idx1} and {closest_idx2} (cosine distance: {closest_dist:.4f})")
-        
-        # Compare to other videos
-        for j, other_video in enumerate(unique_videos):
-            if video == other_video:
-                continue
-                
-            other_indices = [idx for idx, v in enumerate(labels) if v == other_video]
-            
-            # Include category in other video label if available
-            other_video_label = other_video
-            if categories:
-                other_category = categories[other_indices[0]]
-                other_video_label = f"{other_category}: {other_video}"
-            
-            # Get distances between this video and other video
-            cross_dists = cosine_dists[np.ix_(video_indices, other_indices)]
-            
-            # Find closest pair between videos
-            closest_pair = np.unravel_index(np.argmin(cross_dists), cross_dists.shape)
-            closest_idx1, closest_idx2 = video_indices[closest_pair[0]], other_indices[closest_pair[1]]
-            closest_dist = cross_dists[closest_pair]
-            
-            print(f"  - Closest to {other_video_label}: embeddings {closest_idx1} and {closest_idx2} (cosine distance: {closest_dist:.4f})")
-
 def process_embeddings(args, embedding_type):
     """Process and visualize a specific type of embeddings"""
     # Set the title suffix based on embedding type
@@ -349,12 +284,6 @@ def process_embeddings(args, embedding_type):
     # Save figure
     fig.savefig(output_file, dpi=300, bbox_inches='tight')
     print(f"Visualization saved to {output_file}")
-    
-    # Analyze distances if dataset is not too large
-    if len(embeddings) <= 1000:
-        analyze_distances(embeddings, video_names, categories)
-    else:
-        print("\nSkipping distance analysis due to large dataset size")
     
     return fig
 

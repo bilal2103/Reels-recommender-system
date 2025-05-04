@@ -113,32 +113,53 @@ def split_text_into_chunks(text, max_tokens=77):
     Returns:
         List of text chunks
     """
-    # Split by spaces to get words
-    words = text.split()
+    # For hashtag-heavy content, split by hashtags first
+    if text.count('#') > 3:  # If there are multiple hashtags
+        chunks = []
+        # First chunk: everything before hashtags (if exists)
+        main_text = text.split('#')[0].strip()
+        if main_text:
+            chunks.append(main_text)
+        
+        # Then process hashtags, grouping them in smaller bundles
+        hashtag_parts = ['#' + part for part in text.split('#')[1:] if part.strip()]
+        current_chunk = ""
+        
+        for hashtag in hashtag_parts:
+            # If adding this hashtag would make chunk too long, start a new chunk
+            if len(current_chunk + " " + hashtag) > 30:  # Conservative estimate
+                if current_chunk:
+                    chunks.append(current_chunk)
+                current_chunk = hashtag
+            else:
+                current_chunk = (current_chunk + " " + hashtag).strip()
+        
+        # Add the last hashtag chunk
+        if current_chunk:
+            chunks.append(current_chunk)
+        
+        return chunks
     
-    # Create chunks of words that will likely fit within token limit
-    # On average, each word is 1-2 tokens
+    # Regular text splitting for non-hashtag-heavy content
+    words = text.split()
     chunks = []
     current_chunk = []
-    current_word_count = 0
     
-    for word in words:
-        if current_word_count >= max_tokens // 2:  # Conservative estimate: 2 words per token
-            chunks.append(" ".join(current_chunk))
-            current_chunk = [word]
-            current_word_count = 1
-        else:
-            current_chunk.append(word)
-            current_word_count += 1
+    # More conservative splitting: ~1.5 tokens per word on average
+    words_per_chunk = max_tokens // 2  
     
-    # Add the last chunk if not empty
-    if current_chunk:
-        chunks.append(" ".join(current_chunk))
+    for i in range(0, len(words), words_per_chunk):
+        chunk = " ".join(words[i:i + words_per_chunk])
+        chunks.append(chunk)
     
     return chunks
 
 def get_clip_text_embedding(text, model, device):
     """Generate CLIP embedding for text, handling long text by chunking and aggregating"""
+    if not text:
+        print("Warning: Empty text provided, skipping text embedding")
+        return None
+        
     # Split text into chunks that fit CLIP's token limit
     chunks = split_text_into_chunks(text)
     
@@ -148,20 +169,40 @@ def get_clip_text_embedding(text, model, device):
     # Process each chunk and collect embeddings
     chunk_embeddings = []
     for i, chunk in enumerate(chunks):
-        print(f"Processing text chunk {i+1}/{len(chunks)}: {chunk[:50]}...")
-        try:
-            with torch.no_grad():
-                text_tokens = clip.tokenize([chunk]).to(device)
-                features = model.encode_text(text_tokens)
-                chunk_embeddings.append(features.cpu().numpy())
-        except RuntimeError as e:
-            print(f"Error encoding text chunk: {str(e)}")
-            print(f"Skipping problematic chunk: {chunk[:50]}...")
+        if not chunk.strip():  # Skip empty chunks
             continue
+            
+        print(f"Processing text chunk {i+1}/{len(chunks)}: {chunk[:50]}...")
+        
+        # Try with incrementally shorter versions if needed
+        success = False
+        attempt_chunk = chunk
+        
+        for attempt in range(3):  # Try up to 3 times with shorter text
+            try:
+                with torch.no_grad():
+                    text_tokens = clip.tokenize([attempt_chunk]).to(device)
+                    features = model.encode_text(text_tokens)
+                    chunk_embeddings.append(features.cpu().numpy())
+                    success = True
+                    break
+            except RuntimeError as e:
+                # If it's too long, try with a shorter version (70% of original)
+                if "context length" in str(e) and attempt < 2:
+                    words = attempt_chunk.split()
+                    new_length = int(len(words) * 0.7)
+                    attempt_chunk = " ".join(words[:new_length])
+                    print(f"  Retrying with shorter text ({new_length} words)")
+                else:
+                    print(f"  Error encoding text chunk: {str(e)}")
+                    print(f"  Skipping problematic chunk: {chunk[:50]}...")
+                    break
     
     if not chunk_embeddings:
         print("Warning: Failed to generate any valid text embeddings")
-        return None
+        # Return a default embedding filled with zeros as fallback
+        default_embedding = np.zeros((1, 512))  # CLIP ViT-B/32 uses 512 dimensions
+        return default_embedding
     
     # Aggregate chunk embeddings using mean pooling
     aggregated_embedding = np.mean(chunk_embeddings, axis=0)
@@ -307,6 +348,68 @@ def process_all_videos(data_folder="Data", num_frames=None, frame_interval=1, ba
     
     return results
 
+def calculate_similarity_matrix(results):
+    """Calculate cosine similarity between all pairs of video embeddings.
+    
+    Args:
+        results: List of dictionaries containing the embedding results
+        
+    Returns:
+        similarity_matrix: 2D numpy array of similarity scores
+        video_names: List of video names corresponding to the matrix indices
+    """
+    # Extract aggregated embeddings and video names
+    embeddings = []
+    video_names = []
+    categories = []
+    
+    for result in results:
+        # Reshape to 1D if needed
+        embedding = result["aggregated_embeddings"].flatten()
+        embeddings.append(embedding)
+        video_names.append(result["video_name"])
+        categories.append(result["category"])
+    
+    # Convert to numpy array
+    embeddings_array = np.array(embeddings)
+    
+    # Normalize the embeddings to calculate cosine similarity
+    normalized_embeddings = embeddings_array / np.linalg.norm(embeddings_array, axis=1, keepdims=True)
+    
+    # Calculate cosine similarity
+    similarity_matrix = np.dot(normalized_embeddings, normalized_embeddings.T)
+    
+    return similarity_matrix, video_names, categories
+
+def print_similarity_matrix(similarity_matrix, video_names, categories, n_closest=3):
+    """Print the similarity matrix in a readable format.
+    
+    Args:
+        similarity_matrix: 2D numpy array of similarity scores
+        video_names: List of video names corresponding to the matrix indices
+        categories: List of categories corresponding to the video names
+        n_closest: Number of closest videos to display for each video
+    """
+    n_videos = len(video_names)
+    
+    print("\n==== Video Similarity Matrix ====")
+    print(f"Comparing {n_videos} videos\n")
+    
+    # Print top N most similar videos for each video
+    for i in range(n_videos):
+        # Get similarities for this video, excluding self-similarity
+        similarities = similarity_matrix[i].copy()
+        similarities[i] = -1  # Exclude self
+        
+        # Get indices of top N most similar videos
+        top_indices = np.argsort(similarities)[::-1][:n_closest]
+        
+        print(f"[{categories[i]}] {video_names[i]}:")
+        for idx in top_indices:
+            similarity = similarity_matrix[i, idx]
+            print(f"  - {similarity:.4f} similar to [{categories[idx]}] {video_names[idx]}")
+        print()
+
 if __name__ == "__main__":
     # Create argument parser
     parser = argparse.ArgumentParser(description="Generate CLIP embeddings for videos")
@@ -314,22 +417,130 @@ if __name__ == "__main__":
     parser.add_argument("--frames", type=int, default=None, help="Number of frames to extract. If not specified, extract all frames")
     parser.add_argument("--interval", type=int, default=8, help="Frame interval when extracting all frames (default: every 8th frame)")
     parser.add_argument("--batch", type=int, default=32, help="Batch size for processing through CLIP")
+    parser.add_argument("--similar", type=int, default=3, help="Number of most similar videos to display for each video")
+    parser.add_argument("--video", help="Path to a specific video file to process (instead of processing all videos)")
     
     args = parser.parse_args()
     
     # Print system info
     print(f"Python version: {sys.version}")
     
-    # Process all videos with the specified parameters
-    results = process_all_videos(
-        args.data, 
-        args.frames, 
-        args.interval, 
-        args.batch
-    )
+    # Get the best available device
+    device_type = print_gpu_info()
+    print(f"Using device: {device_type}")
+    device = torch.device(device_type)
+    
+    # Load CLIP model once for all videos
+    print("Loading CLIP model...")
+    model, preprocess = clip.load("ViT-B/32", device=device)
+    
+    results = []
+    
+    # Process a single video if specified, otherwise process all videos
+    if args.video:
+        video_path = args.video
+        if not os.path.exists(video_path):
+            print(f"Error: Video file {video_path} does not exist")
+            sys.exit(1)
+            
+        # Determine category from path
+        data_folder = args.data
+        # Default to uncategorized if can't determine
+        category = "uncategorized"
+        
+        try:
+            # Try to extract category from path
+            rel_path = os.path.relpath(video_path, data_folder)
+            parts = rel_path.split(os.sep)
+            if len(parts) > 1:
+                category = parts[0]
+        except:
+            # If there's an error determining category, keep default
+            pass
+            
+        print(f"\n==== Processing [{category}] {os.path.basename(video_path)} ====")
+        
+        # Extract frames
+        frames = extract_frames(video_path, args.frames, args.interval)
+        
+        if not frames:
+            print(f"Warning: No frames were extracted from {video_path}")
+            sys.exit(1)
+            
+        # Get video filename without path and extension
+        video_name = os.path.splitext(os.path.basename(video_path))[0]
+        
+        # Generate embeddings for all extracted frames
+        frame_features = get_clip_embeddings(frames, model, preprocess, device, args.batch)
+        
+        # Aggregate embeddings using mean strategy
+        print("Aggregating embeddings using mean strategy...")
+        aggregated_features = aggregate_embeddings(frame_features)
+        
+        # Process corresponding text file if it exists
+        txt_path = get_text_file_path(video_path)
+        text_content = read_text_file(txt_path)
+        text_features = None
+        
+        if text_content:
+            text_features = get_clip_text_embedding(text_content, model, device)
+            if text_features is not None:
+                print(f"Generated text embedding (shape: {text_features.shape})")
+        
+        # Save embeddings
+        timestamp = int(time.time())
+        output_dir = os.path.join("embeddings", category)
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Save frame embeddings
+        frames_output_path = os.path.join(output_dir, f"{video_name}_embeddings_{timestamp}.npy")
+        np.save(frames_output_path, frame_features)
+        print(f"Saved all {len(frame_features)} frame embeddings to {frames_output_path}")
+        
+        # Save aggregated embeddings
+        aggregated_output_path = os.path.join(output_dir, f"{video_name}_aggregated_mean_{timestamp}.npy")
+        np.save(aggregated_output_path, aggregated_features)
+        print(f"Saved aggregated embeddings to {aggregated_output_path} (shape: {aggregated_features.shape})")
+        
+        # Save text embeddings if available
+        text_output_path = None
+        if text_features is not None:
+            text_output_path = os.path.join(output_dir, f"{video_name}_text_{timestamp}.npy")
+            np.save(text_output_path, text_features)
+            print(f"Saved text embeddings to {text_output_path} (shape: {text_features.shape})")
+        
+        result = {
+            "video_name": video_name,
+            "category": category,
+            "frame_embeddings": frame_features,
+            "frame_embeddings_path": frames_output_path,
+            "aggregated_embeddings": aggregated_features,
+            "aggregated_embeddings_path": aggregated_output_path,
+            "text_content": text_content if text_content else None,
+            "text_embeddings": text_features,
+            "text_embeddings_path": text_output_path
+        }
+        
+        results.append(result)
+        
+        print(f"\n==== Single Video Processing Complete ====")
+        print(f"Video: {video_name}")
+        print(f"Category: {category}")
+        print(f"Frames processed: {len(frame_features)}")
+        print(f"Embedding dimensions: {frame_features.shape[1]}")
+        print(f"Text processed: {'Yes' if text_content else 'No'}")
+        
+    else:
+        # Process all videos
+        results = process_all_videos(
+            args.data, 
+            args.frames, 
+            args.interval, 
+            args.batch
+        )
     
     # Print summary
-    if results:
+    if results and len(results) > 1:
         print("\n==== Summary ====")
         print(f"Processed {len(results)} videos")
         for result in results:
@@ -343,5 +554,9 @@ if __name__ == "__main__":
             print(f"   Aggregated shape: {aggregated_embeddings.shape}")
             if has_text:
                 print(f"   Text embedding: {result['text_embeddings'].shape}")
+        
+        # Calculate and print similarity matrix
+        similarity_matrix, video_names, categories = calculate_similarity_matrix(results)
+        print_similarity_matrix(similarity_matrix, video_names, categories, n_closest=args.similar)
     
     print("\nDone!") 

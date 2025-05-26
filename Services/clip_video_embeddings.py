@@ -1,6 +1,8 @@
 import os
 import sys
-import subprocess
+# Add the project root directory to Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import torch
 import numpy as np
 import cv2
@@ -9,8 +11,11 @@ import time
 import clip
 import glob
 import argparse
+# Add imports for MongoDB integration
+from Models.Reel import Reel
+from Services.MongoService import MongoService
 
-def extract_frames(video_path, num_frames=None, frame_interval=1):
+def extract_frames(video_path, num_frames=None, frame_interval=8):
     """Extract frames from the video
     
     Args:
@@ -256,7 +261,7 @@ def read_text_file(txt_path):
         print(f"Warning: No corresponding txt file found at {txt_path}")
         return ""
 
-def process_all_videos(data_folder="Data", num_frames=None, frame_interval=1, batch_size=32):
+def process_all_videos(model, preprocess,data_folder="Data", num_frames=None, frame_interval=1, batch_size=32):
     video_paths = find_videos_recursive(data_folder)
     
     if not video_paths:
@@ -273,9 +278,8 @@ def process_all_videos(data_folder="Data", num_frames=None, frame_interval=1, ba
     print(f"Using device: {device_type}")
     device = torch.device(device_type)
     
-    # Load CLIP model once for all videos
-    print("Loading CLIP model...")
-    model, preprocess = clip.load("ViT-B/32", device=device)
+    # Initialize MongoDB service
+    mongo_service = MongoService()
     
     # Process each video
     results = []
@@ -310,38 +314,44 @@ def process_all_videos(data_folder="Data", num_frames=None, frame_interval=1, ba
             if text_features is not None:
                 print(f"Generated text embedding (shape: {text_features.shape})")
         
-        # Save embeddings
-        timestamp = int(time.time())
-        output_dir = os.path.join("embeddings", category)
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Save frame embeddings
-        frames_output_path = os.path.join(output_dir, f"{video_name}_embeddings_{timestamp}.npy")
-        np.save(frames_output_path, frame_features)
-        print(f"Saved all {len(frame_features)} frame embeddings to {frames_output_path}")
-        
-        # Save aggregated embeddings
-        aggregated_output_path = os.path.join(output_dir, f"{video_name}_aggregated_mean_{timestamp}.npy")
-        np.save(aggregated_output_path, aggregated_features)
-        print(f"Saved aggregated embeddings to {aggregated_output_path} (shape: {aggregated_features.shape})")
-        
-        # Save text embeddings if available
-        text_output_path = None
+        # Save embeddings to MongoDB
+        print("Saving embeddings to MongoDB...")
+        # Convert the numpy arrays to the correct format for MongoDB
+        # For text features, ensure it's a 2D array before conversion
         if text_features is not None:
-            text_output_path = os.path.join(output_dir, f"{video_name}_text_{timestamp}.npy")
-            np.save(text_output_path, text_features)
-            print(f"Saved text embeddings to {text_output_path} (shape: {text_features.shape})")
+            # Ensure text_features is 2D
+            if len(text_features.shape) == 1:
+                text_features_list = text_features.reshape(1, -1).tolist()
+            else:
+                text_features_list = text_features.tolist()
+        else:
+            text_features_list = None
+
+        # For aggregated features, ensure it's 2D
+        if len(aggregated_features.shape) == 1:
+            aggregated_features_list = aggregated_features.reshape(1, -1).tolist()
+        else:
+            aggregated_features_list = aggregated_features.tolist()
+
+        reel = Reel(
+            path=video_path,
+            category=category,
+            videoEmbeddings=frame_features.tolist() if frame_features is not None else None,
+            aggregatedEmbeddings=aggregated_features_list,
+            textualEmbeddings=text_features_list
+        )
+        
+        reel_id = mongo_service.AddReel(reel)
+        print(f"Saved reel to MongoDB with ID: {reel_id}")
         
         result = {
+            "id": reel_id,
             "video_name": video_name,
             "category": category,
             "frame_embeddings": frame_features,
-            "frame_embeddings_path": frames_output_path,
             "aggregated_embeddings": aggregated_features,
-            "aggregated_embeddings_path": aggregated_output_path,
             "text_content": text_content if text_content else None,
-            "text_embeddings": text_features,
-            "text_embeddings_path": text_output_path
+            "text_embeddings": text_features
         }
         
         results.append(result)
@@ -382,14 +392,6 @@ def calculate_similarity_matrix(results):
     return similarity_matrix, video_names, categories
 
 def print_similarity_matrix(similarity_matrix, video_names, categories, n_closest=3):
-    """Print the similarity matrix in a readable format.
-    
-    Args:
-        similarity_matrix: 2D numpy array of similarity scores
-        video_names: List of video names corresponding to the matrix indices
-        categories: List of categories corresponding to the video names
-        n_closest: Number of closest videos to display for each video
-    """
     n_videos = len(video_names)
     
     print("\n==== Video Similarity Matrix ====")
@@ -433,6 +435,9 @@ if __name__ == "__main__":
     # Load CLIP model once for all videos
     print("Loading CLIP model...")
     model, preprocess = clip.load("ViT-B/32", device=device)
+    
+    # Initialize MongoDB service
+    mongo_service = MongoService()
     
     results = []
     
@@ -487,38 +492,44 @@ if __name__ == "__main__":
             if text_features is not None:
                 print(f"Generated text embedding (shape: {text_features.shape})")
         
-        # Save embeddings
-        timestamp = int(time.time())
-        output_dir = os.path.join("embeddings", category)
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Save frame embeddings
-        frames_output_path = os.path.join(output_dir, f"{video_name}_embeddings_{timestamp}.npy")
-        np.save(frames_output_path, frame_features)
-        print(f"Saved all {len(frame_features)} frame embeddings to {frames_output_path}")
-        
-        # Save aggregated embeddings
-        aggregated_output_path = os.path.join(output_dir, f"{video_name}_aggregated_mean_{timestamp}.npy")
-        np.save(aggregated_output_path, aggregated_features)
-        print(f"Saved aggregated embeddings to {aggregated_output_path} (shape: {aggregated_features.shape})")
-        
-        # Save text embeddings if available
-        text_output_path = None
+        # Save embeddings to MongoDB
+        print("Saving embeddings to MongoDB...")
+        # Convert the numpy arrays to the correct format for MongoDB
+        # For text features, ensure it's a 2D array before conversion
         if text_features is not None:
-            text_output_path = os.path.join(output_dir, f"{video_name}_text_{timestamp}.npy")
-            np.save(text_output_path, text_features)
-            print(f"Saved text embeddings to {text_output_path} (shape: {text_features.shape})")
+            # Ensure text_features is 2D
+            if len(text_features.shape) == 1:
+                text_features_list = text_features.reshape(1, -1).tolist()
+            else:
+                text_features_list = text_features.tolist()
+        else:
+            text_features_list = None
+
+        # For aggregated features, ensure it's 2D
+        if len(aggregated_features.shape) == 1:
+            aggregated_features_list = aggregated_features.reshape(1, -1).tolist()
+        else:
+            aggregated_features_list = aggregated_features.tolist()
+
+        reel = Reel(
+            path=video_path,
+            category=category,
+            videoEmbeddings=frame_features.tolist() if frame_features is not None else None,
+            aggregatedEmbeddings=aggregated_features_list,
+            textualEmbeddings=text_features_list
+        )
+        
+        reel_id = mongo_service.AddReel(reel)
+        print(f"Saved reel to MongoDB with ID: {reel_id}")
         
         result = {
+            "id": reel_id,
             "video_name": video_name,
             "category": category,
             "frame_embeddings": frame_features,
-            "frame_embeddings_path": frames_output_path,
             "aggregated_embeddings": aggregated_features,
-            "aggregated_embeddings_path": aggregated_output_path,
             "text_content": text_content if text_content else None,
-            "text_embeddings": text_features,
-            "text_embeddings_path": text_output_path
+            "text_embeddings": text_features
         }
         
         results.append(result)
@@ -529,10 +540,13 @@ if __name__ == "__main__":
         print(f"Frames processed: {len(frame_features)}")
         print(f"Embedding dimensions: {frame_features.shape[1]}")
         print(f"Text processed: {'Yes' if text_content else 'No'}")
+        print(f"MongoDB ID: {reel_id}")
         
     else:
         # Process all videos
         results = process_all_videos(
+            model,
+            preprocess,
             args.data, 
             args.frames, 
             args.interval, 
@@ -552,6 +566,7 @@ if __name__ == "__main__":
             
             print(f" - [{category}] {video_name}: {frame_embeddings.shape[0]} frames, {frame_embeddings.shape[1]} dimensions")
             print(f"   Aggregated shape: {aggregated_embeddings.shape}")
+            print(f"   MongoDB ID: {result['id']}")
             if has_text:
                 print(f"   Text embedding: {result['text_embeddings'].shape}")
         

@@ -1,4 +1,5 @@
 import os
+import sys
 import glob
 import numpy as np
 import matplotlib.pyplot as plt
@@ -7,6 +8,10 @@ from sklearn.decomposition import PCA
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.colors as mcolors
 import argparse
+
+# Add the project root to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from Services.MongoService import MongoService
 
 def load_embeddings_from_categories(embeddings_dir="embeddings", embedding_type="frame"):
     # Identify all category folders
@@ -74,6 +79,101 @@ def load_embeddings_from_categories(embeddings_dir="embeddings", embedding_type=
     
     if not all_embeddings:
         print(f"No {embedding_type} embeddings found in any category")
+        return None, None, None
+    
+    # Concatenate all embeddings
+    all_embeddings = np.vstack(all_embeddings)
+    
+    return all_embeddings, video_names, categories
+
+def load_embeddings_from_mongodb(embedding_type="frame"):
+    """Load embeddings from MongoDB"""
+    mongo_service = MongoService()
+    all_reels = mongo_service.GetAllReels()
+    
+    if not all_reels:
+        print("No reels found in MongoDB")
+        return None, None, None
+    
+    print(f"Found {len(all_reels)} reels in MongoDB")
+    
+    all_embeddings = []
+    video_names = []
+    categories = []
+    
+    # Load embeddings from each reel
+    for reel in all_reels:
+        category = reel.get("category", "unknown")
+        path = reel.get("path", "")
+        video_name = os.path.splitext(os.path.basename(path))[0] if path else f"reel_{str(reel.get('_id'))}"
+        
+        # Get embeddings based on type
+        if embedding_type == "frame":
+            embeddings = reel.get("videoEmbeddings")
+            if not embeddings:
+                print(f"No frame embeddings found for reel {video_name}")
+                continue
+            
+            # Convert embeddings to numpy array
+            embeddings = np.array(embeddings)
+            print(f" - {category}/{video_name}: {embeddings.shape}")
+            
+            # Add to lists
+            all_embeddings.append(embeddings)
+            # For frame embeddings, each frame gets labeled
+            video_names.extend([video_name] * len(embeddings))
+            categories.extend([category] * len(embeddings))
+            
+        elif embedding_type == "aggregated":
+            embeddings = reel.get("aggregatedEmbeddings")
+            if not embeddings:
+                print(f"No aggregated embeddings found for reel {video_name}")
+                continue
+            
+            # Handle different formats (array or array of arrays)
+            if isinstance(embeddings[0], list):
+                # If it's an array of arrays, take the first one
+                embeddings = np.array(embeddings[0])
+            else:
+                embeddings = np.array(embeddings)
+                
+            # Reshape if needed (ensure it's 2D for consistent handling)
+            if len(embeddings.shape) == 1:
+                embeddings = embeddings.reshape(1, -1)
+                
+            print(f" - {category}/{video_name}: {embeddings.shape}")
+            
+            # Add to lists
+            all_embeddings.append(embeddings)
+            video_names.append(video_name)
+            categories.append(category)
+            
+        elif embedding_type == "text":
+            embeddings = reel.get("textualEmbeddings")
+            if not embeddings:
+                print(f"No text embeddings found for reel {video_name}")
+                continue
+                
+            # Handle different formats (array or array of arrays)
+            if isinstance(embeddings[0], list):
+                # If it's an array of arrays, take the first one
+                embeddings = np.array(embeddings[0])
+            else:
+                embeddings = np.array(embeddings)
+                
+            # Reshape if needed (ensure it's 2D for consistent handling)
+            if len(embeddings.shape) == 1:
+                embeddings = embeddings.reshape(1, -1)
+                
+            print(f" - {category}/{video_name}: {embeddings.shape}")
+            
+            # Add to lists
+            all_embeddings.append(embeddings)
+            video_names.append(video_name)
+            categories.append(category)
+    
+    if not all_embeddings:
+        print(f"No {embedding_type} embeddings found in MongoDB")
         return None, None, None
     
     # Concatenate all embeddings
@@ -248,8 +348,11 @@ def process_embeddings(args, embedding_type):
     elif embedding_type == "text":
         title_suffix = "Text Embeddings"
     
-    # Load embeddings
-    embeddings, video_names, categories = load_embeddings_from_categories(args.dir, embedding_type)
+    # Load embeddings based on source
+    if args.source == "files":
+        embeddings, video_names, categories = load_embeddings_from_categories(args.dir, embedding_type)
+    elif args.source == "mongodb":
+        embeddings, video_names, categories = load_embeddings_from_mongodb(embedding_type)
     
     if embeddings is None:
         return
@@ -297,6 +400,8 @@ def main():
     parser.add_argument("--sample", type=int, default=None, help="Sample a subset of embeddings for visualization. Useful for large datasets")
     parser.add_argument("--type", default="all", choices=["frame", "aggregated", "text", "all"], 
                         help="Type of embeddings to visualize (frame, aggregated, text, or all)")
+    parser.add_argument("--source", default="files", choices=["files", "mongodb"], 
+                        help="Source of embeddings (files or MongoDB)")
     
     args = parser.parse_args()
     

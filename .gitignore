@@ -86,6 +86,7 @@ DerivedData
 *.xcuserstate
 **/.xcode.env.local
 
+*.env
 # Android/IntelliJ
 .gradle
 local.properties

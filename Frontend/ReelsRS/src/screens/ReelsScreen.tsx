@@ -25,7 +25,7 @@ interface Reel {
 
 const ReelsScreen = ({ route }: any) => {
   const [userId] = useState(route.params?.userId || '');
-  const [currentReelId, setCurrentReelId] = useState(route.params?.initialReelId || '');
+  const [currentReelId, setCurrentReelId] = useState(route.params?.initialPreferenceReelId || '');
   const [nextReelId, setNextReelId] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
@@ -44,10 +44,24 @@ const ReelsScreen = ({ route }: any) => {
     console.log('User ID:', userId);
     console.log('Initial Reel ID:', currentReelId);
 
-    // Load initial reel content
-    if (currentReelId) {
-      loadReelContent(currentReelId, true);
-    }
+    const initializeReel = async () => {
+      if (!currentReelId) {
+        console.error('No initial reel ID provided');
+        return;
+      }
+
+      try {
+        // Load initial reel content
+        await loadReelContent(currentReelId, true);
+        
+        // Start preloading next reel
+        await preloadNextReel();
+      } catch (error) {
+        console.error('Error initializing reel:', error);
+      }
+    };
+
+    initializeReel();
   }, []);
 
   const loadReelContent = async (reelId: string, isCurrent: boolean = true) => {

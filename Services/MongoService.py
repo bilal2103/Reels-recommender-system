@@ -92,7 +92,10 @@ class MongoService:
         return None
     
     def GetReelsByCategory(self, category: str):
-        allReels = self.reels_collection.find({"category": category}, {"_id": 1, "path": 1})
+        allReels = self.reels_collection.find(
+            {"category": {"$regex": f"^{category}", "$options": "i"}},
+            {"_id": 1, "path": 1}
+        )        
         return [reel for reel in allReels]
 
     def StoreSimilarReels(self, reel_id: str, similarities: List[Dict[str, str]]):
@@ -106,3 +109,14 @@ class MongoService:
         if reelSimilaritiesObject:
             return reelSimilaritiesObject.get("similarities", [])
         return []
+    
+    def DeleteUncategorizedReels(self):
+        print("Printing uncategorized reels")
+        uncategorized_reels = self.GetReelsByCategory("uncategorized")
+        for reel in uncategorized_reels:
+            print(reel)
+        print(self.reels_collection.delete_many({"category": "uncategorized"}))
+
+if __name__ == "__main__":
+    mongo_service = MongoService()
+    mongo_service.DeleteUncategorizedReels()

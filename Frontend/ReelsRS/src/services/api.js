@@ -113,7 +113,13 @@ export const reelsAPI = {
   // Get reel content (video)
   getReelContent: async (reelId) => {
     try {
+      if (!reelId) {
+        throw new Error('ReelId is required');
+      }
       const response = await fetch(`${API_BASE_URL}/api/reel-content?reelId=${reelId}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch reel content: ${response.status}`);
+      }
       return response;
     } catch (error) {
       console.error('Error fetching reel content:', error);

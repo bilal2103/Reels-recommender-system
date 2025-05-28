@@ -53,6 +53,16 @@ async def SetInitialPreferences(setInitialPreferencesRequest: SetInitialPreferen
         reelsService = ReelsService()
         randomInitialReelId = reelsService.GetInitialReels(setInitialPreferencesRequest.initialPreferences, mongo_service)
         print("Initial preference reel: ", randomInitialReelId)
+        
+        if randomInitialReelId is None:
+            return JSONResponse(
+                status_code=404, 
+                content={
+                    "success": False, 
+                    "error": "No reels found in any category. Please ensure the database has reels."
+                }
+            )
+        print("Random initial reel: ", randomInitialReelId)
         return {"success": True, "initialPreferenceReelId": randomInitialReelId}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})

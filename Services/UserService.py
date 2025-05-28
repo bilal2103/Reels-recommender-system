@@ -5,7 +5,7 @@ class UserService:
     def GetCategoryToServe(self, user: dict):
         categoricalPreferences = user.get("categoricalPreferences", {})
         if len(categoricalPreferences) == 0:
-            return random.choice(["OddlySatisfying", "Food", "Gaming", "Cars", "Gymming"])
+            return random.choice(["OddlySatisfying", "Food", "Gaming", "Cars", "Gym"])
         maxRating = 0
         categoryToServe = None
         for category, (watched, rating) in categoricalPreferences.items():

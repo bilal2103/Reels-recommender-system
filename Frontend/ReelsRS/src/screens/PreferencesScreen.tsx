@@ -47,7 +47,6 @@ const PreferencesScreen = ({ route, navigation }: any) => {
     setIsLoading(true);
 
     try {
-      // Send parameters in the request body
       const requestData = {
         userId: userId,
         initialPreferences: selectedPreferences
@@ -56,13 +55,13 @@ const PreferencesScreen = ({ route, navigation }: any) => {
       console.log('Sending request with data:', requestData);
       
       const response = await api.patch('/set-initial-preferences', requestData);
+      console.log('Response:', response.data);
 
-      if (response.data.success) {
+      if (response.data.success && response.data.initialPreferenceReelId) {
         Alert.alert('Success', 'Your preferences have been saved!', [
           {
             text: 'Continue',
             onPress: () => {
-              // Navigate to Reels screen with initial reels and userId
               navigation.navigate('Reels', {
                 initialPreferenceReelId: response.data.initialPreferenceReelId,
                 userId: userId
@@ -71,11 +70,25 @@ const PreferencesScreen = ({ route, navigation }: any) => {
           }
         ]);
       } else {
-        Alert.alert('Error', 'Failed to save preferences. Please try again.');
+        // Handle case where no reels are available
+        Alert.alert(
+          'No Content Available',
+          'Sorry, no content is available for your preferences at the moment. Please try again later.',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                // Navigate back to login or show empty state
+                navigation.navigate('Login');
+              },
+            }
+          ]
+        );
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Save preferences error:', error);
-      Alert.alert('Error', 'Something went wrong. Please try again later.');
+      const errorMessage = error.response?.data?.error || 'Something went wrong. Please try again later.';
+      Alert.alert('Error', errorMessage);
     } finally {
       setIsLoading(false);
     }

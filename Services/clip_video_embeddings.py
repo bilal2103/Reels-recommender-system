@@ -222,23 +222,31 @@ def find_videos_recursive(data_folder):
     """Find all mp4 files in the data folder and its subdirectories recursively."""
     video_paths = []
     
+    # Normalize data_folder path
+    data_folder = os.path.normpath(data_folder)
+    
     for root, dirs, files in os.walk(data_folder):
         for file in files:
             if file.endswith('.mp4'):
-                video_path = os.path.join(root, file)
+                video_path = os.path.normpath(os.path.join(root, file))
                 video_paths.append(video_path)
     
     return video_paths
 
 def get_category_from_path(video_path, data_folder):
     """Extract category from video path."""
+    # Normalize paths to use consistent separators
+    video_path = os.path.normpath(video_path)
+    data_folder = os.path.normpath(data_folder)
     # Get the relative path from data_folder
     rel_path = os.path.relpath(video_path, data_folder)
     # The first part of the path is the category
     parts = rel_path.split(os.sep)
     
     if len(parts) > 1:
-        return parts[0]
+        # Convert category to title case to handle case sensitivity
+        category = parts[0].title()
+        return category
     else:
         return "uncategorized"
 
@@ -424,6 +432,11 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
+    # Normalize data folder path
+    args.data = os.path.normpath(args.data)
+    if args.video:
+        args.video = os.path.normpath(args.video)
+    
     # Print system info
     print(f"Python version: {sys.version}")
     
@@ -450,18 +463,8 @@ if __name__ == "__main__":
             
         # Determine category from path
         data_folder = args.data
-        # Default to uncategorized if can't determine
-        category = "uncategorized"
-        
-        try:
-            # Try to extract category from path
-            rel_path = os.path.relpath(video_path, data_folder)
-            parts = rel_path.split(os.sep)
-            if len(parts) > 1:
-                category = parts[0]
-        except:
-            # If there's an error determining category, keep default
-            pass
+        # Try to extract category from path
+        category = get_category_from_path(video_path, data_folder)
             
         print(f"\n==== Processing [{category}] {os.path.basename(video_path)} ====")
         

@@ -76,8 +76,8 @@ export const reelsAPI = {
     try {
       const response = await fetch(`${API_BASE_URL}/api/reel?userId=${userId}&lastWatchedReelId=${lastWatchedReelId}`);
       const data = await response.json();
-      console.log("Similar reel:", data.similar_reel_id);
-      return data.similar_reel_id;
+      console.log("Similar reel:", data.next_reel_id);
+      return data.next_reel_id;
     } catch (error) {
       console.error('Error fetching similar reels:', error);
       throw error;

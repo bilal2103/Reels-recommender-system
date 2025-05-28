@@ -10,6 +10,7 @@ from Models.LoginRequest import LoginRequest
 from Models.SetInitialPreferencesRequest import SetInitialPreferencesRequest
 import os
 from Services.ReelsService import ReelsService
+from Services.UserService import UserService
 load_dotenv()
 
 app = FastAPI()
@@ -32,7 +33,15 @@ async def Login(loginRequest: LoginRequest):
     try:
         mongo_service = get_mongo_service()
         userId, existingUser = mongo_service.CreateOrGetUser(loginRequest.email, loginRequest.password)
-        return {"id": userId, "existingUser": existingUser}
+        if existingUser:
+            userService = UserService()
+            reelService = ReelsService()
+            user = mongo_service.FindUser(userId)
+            categoryReelToServe = userService.GetCategoryToServe(user)
+            reel_id = reelService.GetReelByCategory(categoryReelToServe, user.get("interactions", {}), mongo_service)
+            return {"id": userId, "existingUser": existingUser, "reel_id": reel_id}
+        else:
+            return {"id": userId, "existingUser": existingUser}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
@@ -55,10 +64,23 @@ async def root():
 async def GetReel(userId: str, lastWatchedReelId: str):
     try:
         mongo_service = get_mongo_service()
+        userService = UserService()
+        reelService = ReelsService()
         user = mongo_service.FindUser(userId)
-        finder = SimilarReelFinder(mongo_service=mongo_service)
-        similar_reel_id = finder.find_similar_reel(reel_id=lastWatchedReelId, user_interactions=user.get("interactions", {}))
-        return {"similar_reel_id": similar_reel_id}
+        reelMetadata = mongo_service.GetReel(lastWatchedReelId)
+        categoryReelToServe = userService.GetCategoryToServe(user)
+        print("Last watched reel category: ", reelMetadata.get("category"))
+        print("Category to serve: ", categoryReelToServe)
+        if categoryReelToServe is None or categoryReelToServe == reelMetadata.get("category"):
+            print("Finding similar reel")
+            finder = SimilarReelFinder(mongo_service=mongo_service)
+            similar_reel_id = finder.find_similar_reel(reel_id=lastWatchedReelId, user_interactions=user.get("interactions", {}))
+            return {"next_reel_id": similar_reel_id}
+        else:
+            print("Finding reel by category")
+            return {
+                "next_reel_id": reelService.GetReelByCategory(categoryReelToServe, user.get("interactions", {}), mongo_service)
+                }
     except Exception as e:
         import traceback
         traceback.print_exc()

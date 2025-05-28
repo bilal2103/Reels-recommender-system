@@ -65,10 +65,16 @@ class MongoService:
         return reels
 
     def MarkAsWatched(self, user_id: str, reel_id: str, rating: int):
+        reelMetadata = self.GetReel(reel_id)
         user = self.FindUser(user_id)
         currInteractions = user.get("interactions", {})
         currInteractions[reel_id] = rating
-        self.users_collection.update_one({"_id": ObjectId(user_id)}, {"$set": {"interactions": currInteractions}})
+        currCategoricalPreferences = user.get("categoricalPreferences", {})
+        currentlyWatched, currentAverageRating = currCategoricalPreferences.get(reelMetadata.get("category"), (0, 0.0))
+        currentlyWatched += 1
+        currentAverageRating = (currentAverageRating * (currentlyWatched - 1) + rating) / currentlyWatched
+        currCategoricalPreferences[reelMetadata.get("category")] = (currentlyWatched, currentAverageRating)
+        self.users_collection.update_one({"_id": ObjectId(user_id)}, {"$set": {"interactions": currInteractions, "categoricalPreferences": currCategoricalPreferences}})
 
     def GetReelByPath(self, path: str):
         # Escape special regex characters in the path

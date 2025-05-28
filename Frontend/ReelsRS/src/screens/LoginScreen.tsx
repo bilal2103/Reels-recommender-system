@@ -52,9 +52,11 @@ const LoginScreen = ({ navigation }: any) => {
           // Navigate to preferences screen for new users
           navigation.navigate('Preferences', { userId: response.id });
         } else {
-          // For existing users, navigate to home screen
-          Alert.alert('Welcome back!');
-          // navigation.navigate('Home');
+          // For existing users, navigate to reels screen with initial reel
+          navigation.navigate('Reels', { 
+            userId: response.id,
+            initialReelId: response.reel_id 
+          });
         }
       } else {
         setErrorMessage('Login failed. Please try again.');

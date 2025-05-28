@@ -12,7 +12,7 @@ export type RootStackParamList = {
   Login: undefined;
   Preferences: { userId: string };
   Home: undefined;
-  Reels: undefined;
+  Reels: { userId: string; initialReelId: string };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();

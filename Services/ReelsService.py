@@ -12,7 +12,7 @@ class ReelsService:
         return str(randomReel.get("_id"))
     
     def GetSerendipityReel(self, userId: str, currentReelId: str, mongoService: MongoService):
-        reelCategories = ["OddlySatisfying", "Food", "Gaming"]
+        reelCategories = ["OddlySatisfying", "Food", "Gaming", "Cars", "Gymming"]
         user = mongoService.FindUser(userId)
         interactions = user.get("interactions", {})
         currentReel = mongoService.GetReel(currentReelId)
@@ -31,4 +31,20 @@ class ReelsService:
             else:
                 print("Reel already watched, trying again")
                 continue
+    
+    def GetReelByCategory(self, category: str, interactions: dict, mongoService: MongoService):
+        categoryReels = mongoService.GetReelsByCategory(category)
+        for reel in categoryReels:
+            if reel.get("_id") not in interactions:
+                return str(reel.get("_id"))
+        print("No reel found in category: ", category)
+        allCategories = ["OddlySatisfying", "Food", "Gaming", "Cars", "Gymming"]
+        allCategories.remove(category)
+        for category in allCategories:
+            categoryReels = mongoService.GetReelsByCategory(category)
+            for reel in categoryReels:
+                if reel.get("_id") not in interactions:
+                    return str(reel.get("_id"))
+        print("No reel found in any category")
+        return None
 

@@ -25,7 +25,7 @@ interface Reel {
 
 const ReelsScreen = ({ route }: any) => {
   const [userId] = useState(route.params?.userId || '');
-  const [currentReelId, setCurrentReelId] = useState(route.params?.initialPreferenceReelId || '');
+  const [currentReelId, setCurrentReelId] = useState(route.params?.initialReelId || '');
   const [nextReelId, setNextReelId] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
